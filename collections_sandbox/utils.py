@@ -18,6 +18,13 @@ logging.getLogger("boto3").setLevel(logging.WARNING)
 logging.getLogger("botocore").setLevel(logging.WARNING)
 
 
+def str_from_s3(ras_text_file_path: str, client, bucket) -> str:
+    """Read a text file from s3 and return its contents as a string."""
+    logging.debug(f"reading: {ras_text_file_path}")
+    response = client.get_object(Bucket=bucket, Key=ras_text_file_path)
+    return response["Body"].read().decode("utf-8")
+
+
 def list_keys(s3_client: boto3.Session.client, bucket: str, prefix: str, suffix: str = "") -> list:
     """List all keys in an S3 bucket with a given prefix and suffix."""
     keys = []
