@@ -1,9 +1,9 @@
 # import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
+from scipy.stats import norm
 from components.layout import configure_page_settings
 from components.tables import stylized_table
-
 
 def app():
     configure_page_settings("Gage Viewer")
@@ -38,11 +38,16 @@ def app():
             for realization in df["realization"].unique():
                 realization_df = df[df["realization"] == realization]
                 realization_df = realization_df.sort_values(by=value, ascending=False)
+                realization_df["rank"] = realization_df[value].rank(ascending=False)
                 realization_df["weibull_position"] = realization_df["rank"] / (len(realization_df) + 1)
+
+                rank = realization_df["rank"].values.astype(int)
+                pp = [i / (len(rank) + 1) for i in rank]
+                z_scores = [norm.ppf(1 - p) for p in pp] 
 
                 fig.add_trace(
                     go.Scatter(
-                        x=realization_df["weibull_position"],
+                        x=z_scores,
                         y=realization_df[value],
                         mode="markers",
                         name=f"Realization {realization}",
@@ -52,30 +57,11 @@ def app():
                 )
 
             fig.update_layout(
-                title="Weibull Plot", xaxis_title=f"{gage_id}", yaxis_title=plot_label, xaxis=dict(autorange="reversed")
+                title=gage_id,
+                xaxis_title="Z-Scores",
+                yaxis_title=plot_label,
+                yaxis_type="log"
             )
-
-            # 1% chance event
-            fig.add_shape(
-                type="line",
-                x0=0.01,
-                y0=df[value].min(),
-                x1=0.01,
-                y1=df[value].max(),
-                line=dict(color="Red", width=2, dash="dashdot"),
-            )
-            fig.add_annotation(x=0.01, y=df[value].max(), text="1% Chance Event", showarrow=True, arrowhead=1)
-
-            # # 50% chance event
-            # fig.add_shape(
-            #     type="line",
-            #     x0=0.5,
-            #     y0=df[value].min(),
-            #     x1=0.5,
-            #     y1=df[value].max(),
-            #     line=dict(color="Red", width=2, dash="dashdot"),
-            # )
-            # fig.add_annotation(x=0.5, y=df[value].max(), text="50% Chance Event", showarrow=True, arrowhead=1)
 
             st.plotly_chart(fig)
 
