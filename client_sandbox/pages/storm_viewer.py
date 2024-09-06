@@ -10,10 +10,8 @@ from shapely.geometry import Point
 from streamlit_folium import st_folium
 
 
-def swap_coordinates(point_str):
-    """Fix for error in stac items, need to fix in catalog and return wkt.loads(point_str)"""
-    point = wkt.loads(point_str)
-    return Point(point.y, point.x)
+def text_to_point(point_str):
+    return wkt.loads(point_str)
 
 
 def app():
@@ -35,7 +33,7 @@ def app():
     search_col1, search_col2 = st.columns(2)
 
     with search_col1:
-        realization = st.number_input("Search by Realization", min_value=0, max_value=5, step=1)
+        realization = st.number_input("Search by Realization", min_value=1, max_value=5, step=1)
         search_block = st.number_input("Search by Block Group", min_value=0, step=1)
         search_id = st.text_input("Search by ID")
 
@@ -49,7 +47,7 @@ def app():
 
     if search_block:
         df = df[df["Block"] == search_block]
-    if realization > 0:
+    if realization != 1:
         df = df[df["Realization"] == realization]
     if search_id:
         df = df[df["ID"].str.contains(search_id, case=False, na=False)]
@@ -80,22 +78,22 @@ def app():
     with col2:
 
         try:
-            df["geometry"] = df["historic_storm_center"].apply(swap_coordinates)
+            df["geometry"] = df["historic_storm_center"].apply(text_to_point)
             gdf = gpd.GeoDataFrame(df, geometry="geometry")
         except Exception as e:
             st.write(f"Error creating GeoDataFrame: {e}")
             return
 
         try:
-            df["geometry2"] = st.storms["SST_storm_center"].apply(swap_coordinates)
-            gdf2 = gpd.GeoDataFrame(df[["ID"]], geometry=df["geometry2"])
+            df["geometry2"] = st.storms["SST_storm_center"].apply(text_to_point)
+            gdf2 = gpd.GeoDataFrame(df[["ID"]], geometry=df["geometry2"], crs=st.proj1)
         except Exception as e:
             st.write(f"Error creating secondary GeoDataFrame: {e}")
             gdf2 = None
 
         m = folium.Map(location=[37.75153, -80.94911], zoom_start=6)
 
-        folium.GeoJson(f"{st.stac_url}/collections/Kanawha-0505-R001/items/R001-E2044").add_to(m)
+        folium.GeoJson(f"{st.stac_url}/collections/Kanawha-R01/items/E002044").add_to(m)
 
         # historic_storm_center
         for idx, row in gdf.iterrows():
