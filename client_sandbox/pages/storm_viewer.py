@@ -67,8 +67,8 @@ def app():
             df[
                 [
                     "ID",
-                    # "Realization",
-                    # "Block",
+                    "Realization",
+                    "Block",
                     "Max Precip (in)",
                     "Date",
                     "Season",
@@ -83,20 +83,21 @@ def app():
             df["geometry"] = df["historic_storm_center"].apply(swap_coordinates)
             gdf = gpd.GeoDataFrame(df, geometry="geometry")
         except Exception as e:
-            st.write(f"Error creating GeoDataFrame: {e}")
+            st.error(f"Error creating GeoDataFrame: {e}")
             return
 
         try:
             df["geometry2"] = st.storms["SST_storm_center"].apply(swap_coordinates)
             gdf2 = gpd.GeoDataFrame(df[["ID"]], geometry=df["geometry2"])
         except Exception as e:
-            st.write(f"Error creating secondary GeoDataFrame: {e}")
+            st.error(f"Error creating secondary GeoDataFrame: {e}")
             gdf2 = None
 
         m = folium.Map(location=[37.75153, -80.94911], zoom_start=6)
 
         folium.GeoJson(f"{st.stac_url}/collections/Kanawha-0505-R001/items/R001-E2044").add_to(m)
 
+        st.dataframe(gdf)
         # historic_storm_center
         for idx, row in gdf.iterrows():
             if isinstance(row.geometry, Point):
@@ -111,6 +112,7 @@ def app():
 
         # SST_storm_center
         if gdf2 is not None:
+            st.dataframe(gdf2)
             for idx, row in gdf2.iterrows():
                 if isinstance(row.geometry, Point):
                     folium.CircleMarker(
