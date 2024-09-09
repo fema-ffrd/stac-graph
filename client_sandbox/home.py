@@ -42,6 +42,18 @@ def app():
         st.balloons()
         st.success("Complete! Data is ready for exploration.")
 
+    if st.session_state["init_data"] is True:
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.write("Gages")
+            st.write(st.gages.head())
+        with col2:
+            st.write("Storms")
+            st.write(st.storms.head())
+        with col3:
+            st.write("Computations")
+            st.write(st.computation.head())
+
     render_footer()
 
 
