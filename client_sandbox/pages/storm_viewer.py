@@ -10,8 +10,10 @@ from shapely.geometry import Point
 from streamlit_folium import st_folium
 
 
-def text_to_point(point_str):
-    return wkt.loads(point_str)
+def swap_coordinates(point_str):
+    """Fix for error in stac items, need to fix in catalog and return wkt.loads(point_str)"""
+    point = wkt.loads(point_str)
+    return Point(point.x, point.y)
 
 
 def app():
@@ -30,98 +32,81 @@ def app():
         }
     )
 
-    search_col1, search_col2 = st.columns(2)
+    # create a sidebar for all of the input filters
+    st.sidebar.title("Input Search Filters")
 
-    with search_col1:
-        realization = st.number_input("Search by Realization", min_value=1, max_value=5, step=1)
-        search_block = st.number_input("Search by Block Group", min_value=0, step=1)
-        search_id = st.text_input("Search by ID")
+    # search_col1, search_col2 = st.columns(2)
 
-    with search_col2:
-        search_precip_inches = st.number_input("Search by Max Precipitation (inches)", min_value=0.0, step=0.1)
-        storm_season = st.selectbox("Search for Seasonal Storms", ["All", "spring", "summer", "fall", "winter"])
-        enable_date_search = st.checkbox("Enable Date Search")
-        search_storm_date = None
-        if enable_date_search:
-            search_storm_date = st.date_input("Search by Storm Date")
+    # with search_col1:
+    sieve1 = df.copy()
+    st.session_state["realization"] = st.sidebar.multiselect("Select by Realization",
+                                                        sieve1["Realization"].unique(),
+                                                        default=list(sieve1["Realization"].unique())[0])
+    sieve1 = sieve1[sieve1["Realization"].isin(st.session_state["realization"])]
+    st.session_state["block"] = st.sidebar.slider("Select by Block Range",
+                                            min_value=sieve1["Block"].min(),
+                                            max_value=sieve1["Block"].max(),
+                                            value=(122, 255))
+    sieve1 = sieve1[(sieve1["Block"] >= st.session_state["block"][0]) & (sieve1["Block"] <= st.session_state["block"][1])]
 
-    if search_block:
-        df = df[df["Block"] == search_block]
-    if realization != 1:
-        df = df[df["Realization"] == realization]
-    if search_id:
-        df = df[df["ID"].str.contains(search_id, case=False, na=False)]
-    if search_precip_inches:
-        df = df[df["Max Precip (in)"] >= search_precip_inches]
-    if search_storm_date:
-        df = df[df["Date"].str.contains(search_storm_date.strftime("%Y-%m-%d"), case=False, na=False)]
-    if storm_season != "All":
-        df = df[df["Season"].str.contains(storm_season, case=False, na=False)]
+    st.session_state["search_id"] = st.sidebar.multiselect("Search by ID", sieve1["ID"].unique())
+    if len(st.session_state["search_id"]) > 0:
+        st.write("filtering by search_id")
+        sieve1 = sieve1[sieve1["ID"].isin(st.session_state["search_id"])]
 
-    col1, col2 = st.columns([2, 1])
+    # with search_col2:
+    if sieve1["Max Precip (in)"].min() != sieve1["Max Precip (in)"].max():
+        st.session_state["max_precip"] = st.sidebar.slider("Search by Max Precipitation (inches)",
+                                                min_value=sieve1["Max Precip (in)"].min(),
+                                                max_value=sieve1["Max Precip (in)"].max(),
+                                                value=sieve1["Max Precip (in)"].mean(),
+                                                step=0.1)
+        sieve1 = sieve1[sieve1["Max Precip (in)"] >= st.session_state["max_precip"]]
 
-    with col1:
-        stylized_table(
-            df[
-                [
-                    "ID",
-                    # "Realization",
-                    # "Block",
-                    "Max Precip (in)",
-                    "Date",
-                    "Season",
-                    "Link",
-                ]
-            ]
-        )
+    st.session_state["storm_season"] = st.sidebar.multiselect("Search for Seasonal Storms",
+                                                    ["All", "spring", "summer", "fall", "winter"],
+                                                    default=["All"])
+    if "All" not in st.session_state["storm_season"]:
+        sieve1 = sieve1[sieve1["Season"].isin(st.session_state["storm_season"])]
 
-    with col2:
+    st.session_state["storm_date"] = st.sidebar.multiselect("Search by Storm Date",
+                                                    ["All", *sieve1["Date"].unique()],
+                                                    default=["All"])
+    if "All" not in st.session_state["storm_date"]:
+        sieve1 = sieve1[sieve1["Date"].isin(st.session_state["storm_date"])]
 
-        try:
-            df["geometry"] = df["historic_storm_center"].apply(text_to_point)
-            gdf = gpd.GeoDataFrame(df, geometry="geometry")
-        except Exception as e:
-            st.write(f"Error creating GeoDataFrame: {e}")
-            return
+    st.write("Filtered Dataset")
+    st.dataframe(sieve1)
 
-        try:
-            df["geometry2"] = st.storms["SST_storm_center"].apply(text_to_point)
-            gdf2 = gpd.GeoDataFrame(df[["ID"]], geometry=df["geometry2"], crs=st.proj1)
-        except Exception as e:
-            st.write(f"Error creating secondary GeoDataFrame: {e}")
-            gdf2 = None
+    if len(sieve1) > 0:
+        # Create a gdf for the SST storm center points
+        sst_gdf = sieve1.copy()
+        sst_gdf["geometry"] = sst_gdf["SST_storm_center"].apply(swap_coordinates)
+        sst_gdf = gpd.GeoDataFrame(sst_gdf, geometry="geometry")
 
-        m = folium.Map(location=[37.75153, -80.94911], zoom_start=6)
+        # Create a gdf for the historic storm center points
+        historic_gdf = sieve1.copy()
+        historic_gdf["geometry"] = historic_gdf["historic_storm_center"].apply(swap_coordinates)
+        historic_gdf = gpd.GeoDataFrame(historic_gdf, geometry="geometry")
 
-        folium.GeoJson(f"{st.stac_url}/collections/Kanawha-R01/items/E002044").add_to(m)
+        # initialize the maps
+        m1 = folium.Map(location=[37.75153, -80.94911], zoom_start=6)
+        folium.GeoJson(f"{st.stac_url}/collections/Kanawha-R01/items/E005125").add_to(m1)
+        m2 = folium.Map(location=[37.75153, -80.94911], zoom_start=6)
+        folium.GeoJson(f"{st.stac_url}/collections/Kanawha-R01/items/E005125").add_to(m2)
+        
+        # create a heatmap for the historic storm center points
+        folium.plugins.HeatMap(data=historic_gdf["geometry"].apply(lambda pt: [pt.y, pt.x]).tolist()).add_to(m1)
+        # create a heatmap for the SST storm center points
+        folium.plugins.HeatMap(data=sst_gdf["geometry"].apply(lambda pt: [pt.y, pt.x]).tolist()).add_to(m2)
 
-        # historic_storm_center
-        for idx, row in gdf.iterrows():
-            if isinstance(row.geometry, Point):
-                folium.CircleMarker(
-                    location=[row.geometry.y, row.geometry.x],
-                    radius=5,
-                    color="blue",
-                    fill=True,
-                    fill_color="blue",
-                    popup=f"Historic Center: {row['ID']}",
-                ).add_to(m)
-
-        # SST_storm_center
-        if gdf2 is not None:
-            for idx, row in gdf2.iterrows():
-                if isinstance(row.geometry, Point):
-                    folium.CircleMarker(
-                        location=[row.geometry.y, row.geometry.x],
-                        radius=5,
-                        color="red",
-                        fill=True,
-                        fill_color="red",
-                        popup=f"SST Center: {row['ID']}",
-                    ).add_to(m)
-
-        st_folium(m, width=350, height=500)
-
+        col3, col4 = st.columns(2)
+        with col3:
+            st.write("Historic Storm Centers Heatmap")
+            st_folium(m1, width=700, height=700, key="m1")
+        with col4:
+            st.write("SST Storm Centers Heatmap")
+            st_folium(m2, width=700, height=700, key="m2")
 
 if __name__ == "__main__":
     app()
