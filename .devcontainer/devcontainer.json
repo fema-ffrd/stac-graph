@@ -10,12 +10,6 @@
 		"source=${localWorkspaceFolder}/data,target=${containerWorkspaceFolder}/data,type=bind",
 		"source=${localEnv:HOME}${localEnv:USERPROFILE}/.aws,target=/home/mambauser/.aws,type=bind,consistency=cached"
 	],
-	"runArgs": [
-		"--env-file",
-		".env"
-	],
-	// 	"--gpus=all"
-	// ],
 	"customizations": {
 		"settings": {
 			"python.defaultInterpreterPath": "/opt/conda/bin/python",
